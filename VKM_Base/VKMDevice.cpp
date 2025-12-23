@@ -26,6 +26,30 @@ namespace vkm {
 			logicalDevice.destroy();
 	}
 
+	uint32_t VKMDevice::queryMemTypeIndex(uint32_t type, vk::MemoryPropertyFlags properties, vk::Bool32* memTypeFound) const
+	{
+		for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
+			if ((1 << i) & type &&
+				(memoryProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+				if (memTypeFound)
+				{
+					*memTypeFound = true;
+				}
+				return i;
+			}
+		}
+
+		if (memTypeFound)
+		{
+			*memTypeFound = false;
+			return 0;
+		}
+		else
+		{
+			throw std::runtime_error("Could not find a matching memory type");
+		}
+	}
+
 	vkm_result VKMDevice::createLogicalDevice(vk::PhysicalDeviceFeatures enabledFeatures, std::vector<const char*> enabledExtensions, void* pNextChain, bool useSwapChain, vk::QueueFlags requestedQueueTypes)
 	{
 		std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos{};
@@ -164,6 +188,71 @@ namespace vkm {
 		return (std::find(supportedExtensions.begin(), supportedExtensions.end(), extension) != supportedExtensions.end());
 	}
 
+	vkm_result VKMDevice::createBuffer(vk::BufferUsageFlags usageFlags, vk::MemoryPropertyFlags memoryPropertyFlags, vk::DeviceSize size, vk::Buffer* buffer, vk::DeviceMemory* memory, void* data)
+	{
+		vk::BufferCreateInfo createInfo;
+		createInfo.sharingMode = vk::SharingMode::eExclusive;
+		VK_CHECK_RESULT(logicalDevice.createBuffer(&createInfo, nullptr, buffer));
+		vk::MemoryRequirements memReqs;
+		logicalDevice.getBufferMemoryRequirements(*buffer, &memReqs);
+		vk::MemoryAllocateInfo memAlloc;
+		memAlloc.setAllocationSize(memReqs.size)
+			.setMemoryTypeIndex(queryMemTypeIndex(memReqs.memoryTypeBits, memoryPropertyFlags));
+		vk::MemoryAllocateFlagsInfoKHR allocFlagsInfo;
+		if (usageFlags & vk::BufferUsageFlagBits::eShaderDeviceAddress)
+		{
+			allocFlagsInfo.setFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
+			memAlloc.pNext = &allocFlagsInfo;
+		}
+		VK_CHECK_RESULT(logicalDevice.allocateMemory(&memAlloc, nullptr, memory));
+		if (data != nullptr)
+		{
+			void* mapped;
+			mapped = logicalDevice.mapMemory(*memory, 0, size);
+			memcpy(mapped, data, size);
+			if (!(memoryPropertyFlags & vk::MemoryPropertyFlagBits::eHostCoherent))
+			{
+				vk::MappedMemoryRange mappedRange;
+				mappedRange.setMemory(*memory)
+					.setSize(size);
+				logicalDevice.flushMappedMemoryRanges(1, &mappedRange);
+			}
+			if(mapped)
+				logicalDevice.unmapMemory(*memory);
+		}
+		logicalDevice.bindBufferMemory(*buffer, *memory, 0);
+		return vkm_result();
+	}
+	//return vkm::Buffer
+	vkm_result VKMDevice::createBuffer(vk::BufferUsageFlags usageFlags, vk::MemoryPropertyFlags memoryPropertyFlags, vkm::Buffer* buffer, vk::DeviceSize size, void* data)
+	{
+		buffer->device = logicalDevice;
+		vk::MemoryRequirements memReqs;
+		logicalDevice.getBufferMemoryRequirements(buffer->buffer, &memReqs);
+		uint32_t BufferMemTypeIndex = queryMemTypeIndex(memReqs.memoryTypeBits, memoryPropertyFlags);
+		buffer->createBuffer(size, usageFlags, memoryPropertyFlags, BufferMemTypeIndex, data);
+		return vkm_result();
+	}
+	void VKMDevice::copyBuffer(vkm::Buffer* src, vkm::Buffer* dst, vk::Queue queue, vk::BufferCopy* copyRegion)
+	{
+		assert(dst->size >= src->size);
+		assert(src->buffer);
+		vk::CommandBuffer copyCmd = createCommandBuffer(vk::CommandBufferLevel::ePrimary, true);
+		vk::BufferCopy bufferCopy{};
+		if (copyRegion == nullptr)
+		{
+			bufferCopy.size = src->size;
+		}
+		else
+		{
+			bufferCopy = *copyRegion;
+		}
+
+		copyCmd.copyBuffer(src->buffer, dst->buffer,1, &bufferCopy);
+
+		flushCommandBuffer(copyCmd, queue);
+	}
+
 	vk::CommandPool VKMDevice::createCommandPool(uint32_t queueFamilyIndex, vk::CommandPoolCreateFlags createFlags)
 	{
 		vk::CommandPoolCreateInfo createInfo;
@@ -177,5 +266,81 @@ namespace vkm {
 			OutputMessage("[ VKM_DEVICE ] ERROR\nFailed to create cmdPool!\nError code: {}\n", int32_t(result));
 		}
 		return cmdPool;
+	}
+
+	vk::CommandBuffer VKMDevice::createCommandBuffer(vk::CommandBufferLevel level, vk::CommandPool pool, bool begin)
+	{
+		vk::CommandBufferAllocateInfo cmdBufAllocateInfo;
+		cmdBufAllocateInfo.setCommandBufferCount(1)
+			.setLevel(level)
+			.setCommandPool(pool);
+		vk::CommandBuffer cmdBuffer;
+		
+		VK_CHECK_RESULT(logicalDevice.allocateCommandBuffers(&cmdBufAllocateInfo, &cmdBuffer));
+		// If requested, also start recording for the new command buffer
+		if (begin)
+		{
+			vk::CommandBufferBeginInfo beginInfo;
+			VK_CHECK_RESULT(cmdBuffer.begin(&beginInfo));
+		}
+		return cmdBuffer;
+	}
+
+	vk::CommandBuffer VKMDevice::createCommandBuffer(vk::CommandBufferLevel level, bool begin)
+	{
+		return createCommandBuffer(level, commandPool, begin);
+	}
+	void VKMDevice::flushCommandBuffer(vk::CommandBuffer commandBuffer, vk::Queue queue, vk::CommandPool pool, bool free)
+	{
+		if (commandBuffer == VK_NULL_HANDLE)
+		{
+			return;
+		}
+		commandBuffer.end();
+
+		vk::SubmitInfo submitInfo;
+		submitInfo.setCommandBufferCount(1)
+			.setCommandBuffers(commandBuffer);
+
+		// Create fence to ensure that the command buffer has finished executing
+		vk::FenceCreateInfo fenceInfo;
+		vk::Fence fence;
+		VK_CHECK_RESULT(logicalDevice.createFence(&fenceInfo, nullptr, &fence));
+
+		// Submit to the queue
+		VK_CHECK_RESULT(queue.submit(1, &submitInfo, fence));
+
+		// Wait for the fence to signal that command buffer has finished executing
+		VK_CHECK_RESULT(logicalDevice.waitForFences(1, &fence, true, DEFAULT_FENCE_TIMEOUT));
+		
+		logicalDevice.destroyFence(fence);
+		if (free)
+		{
+			logicalDevice.freeCommandBuffers(pool, 1, &commandBuffer);
+		}
+	}
+	void VKMDevice::flushCommandBuffer(vk::CommandBuffer commandBuffer, vk::Queue queue, bool free)
+	{
+		return flushCommandBuffer(commandBuffer, queue, commandPool, free);
+	}
+	vk::Format VKMDevice::getSupportedDepthFormat(bool checkSamplingSupport)
+	{
+		std::vector<vk::Format> depthFormats = { vk::Format::eD32SfloatS8Uint, vk::Format::eD32Sfloat, vk::Format::eD24UnormS8Uint, vk::Format::eD16UnormS8Uint, vk::Format::eD16Unorm };
+		for (auto& format : depthFormats)
+		{
+			vk::FormatProperties formatProperties;
+			physicalDevice.getFormatProperties(format, &formatProperties);
+			// Format must support depth stencil attachment for optimal tiling
+			if (formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eDepthStencilAttachment)
+			{
+				if (checkSamplingSupport) {
+					if (!(formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImage)) {
+						continue;
+					}
+				}
+				return format;
+			}
+		}
+		throw std::runtime_error("Could not find a matching depth format");
 	}
 }

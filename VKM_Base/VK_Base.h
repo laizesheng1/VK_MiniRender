@@ -18,17 +18,27 @@
 #define DefineHandleTypeOperator operator decltype(handle)() const { return handle; }
 #define DefineAddressFunction const decltype(handle)* Address() const { return &handle; }
 
+constexpr uint32_t maxConcurrentFrames = 2;
+
 class VKM_Base {
 	using CreateSurfaceCallback = std::function<vk::SurfaceKHR(vk::Instance)>;
 private:
 	static VKM_Base* singleton;
 	void createSurface();
+	void createCmdPool();
 	void createSwapChain();
+	void createCmdBuffer();
+	void InitializedSync();
+	void InitDefaultDepthStencil();
+	void InitRenderPass();
+	void createPipelineCache();
+	void InitFrameBuffer();
+
 protected:
-	vk::Instance instance=nullptr;
+	vk::Instance instance= VK_NULL_HANDLE;
 	std::vector<std::string> supportedInstanceExtensions;
 
-	vk::PhysicalDevice physicalDevice = nullptr;
+	vk::PhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	vk::PhysicalDeviceProperties physicalDeviceProperties{};
 	vk::PhysicalDeviceMemoryProperties physicalDeviceMemoryProperties{};
 	vk::PhysicalDeviceFeatures PhysicalDeviceFeatures{};
@@ -39,12 +49,23 @@ protected:
 	std::vector<const char*> enabledInstanceExtensions;
 
 	void* deviceCreatepNextChain = nullptr;
-	vk::Device device = nullptr;
-	vk::Queue queue = nullptr;
+
+	vk::Device device = VK_NULL_HANDLE;
+	vk::Queue queue = VK_NULL_HANDLE;
 	vk::Format depthFormat = vk::Format::eUndefined;
+	vk::CommandPool cmdPool = VK_NULL_HANDLE;
+	std::array<vk::CommandBuffer, maxConcurrentFrames> drawCmdBuffers;
+	vk::RenderPass renderPass = VK_NULL_HANDLE;
+	vk::PipelineCache pipelineCache;
+	std::vector<vk::Framebuffer>frameBuffers;
 
 	SwainChain swapChain;
 	CreateSurfaceCallback createSurface_callback;
+
+	std::array<vk::Semaphore, maxConcurrentFrames> imageAvaliableSemaphores{};		//before present
+	std::vector<vk::Semaphore> renderCompleteSemaphores{};
+	std::array<vk::Fence, maxConcurrentFrames> waitFences;
+
 	bool requireStencil = false;
 
 
@@ -53,6 +74,12 @@ public:
 	vkm::VKMDevice* VKMDevice{};
 	std::string name = "VKM";
 	uint32_t apiVersion;
+	//Default depth stencil attachment used by the default render pass
+	struct {
+		vk::Image image;
+		vk::DeviceMemory memory;
+		vk::ImageView view;
+	} depthStencil{};
 
 	VKM_Base();
 	VKM_Base(VKM_Base&&) = delete;
@@ -66,7 +93,7 @@ public:
 	virtual void getEnabledFeatures();
 	virtual void getEnabledExtensions();
 	virtual void prepare();
-
+	
 public:
 	//Gretter
 	void AddLayerOrExtension(std::vector<const char*>& container, const char* name);

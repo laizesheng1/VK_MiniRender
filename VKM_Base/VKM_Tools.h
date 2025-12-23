@@ -37,13 +37,16 @@
 #endif
 
 #define VK_RESULT_THROW
+#define DEFAULT_FENCE_TIMEOUT 100000000000
+
 
 #ifdef VK_RESULT_THROW
 class vkm_result {
 	vk::Result result;
 public:
 	static void (*callback_func)(vk::Result);
-	vkm_result(vk::Result result): result(result){}
+	vkm_result() :result(vk::Result::eSuccess) {}
+	vkm_result(vk::Result result) : result(result) {}
 	vkm_result(vkm_result&& other) noexcept :result(other.result) {}
 	~vkm_result() noexcept(false) {
 		if (uint32_t(result) < VK_RESULT_MAX_ENUM)
@@ -76,7 +79,7 @@ void OutputMessage(const std::format_string<Ts...> format, Ts&&... arguments) {
 	vk::Result res = (f);																					\
 	if (res != vk::Result::eSuccess)																				\
 	{																									\
-		OutputMessage("Fatal : Result is false. Error code: {} in {} at line {}\n", int32_t(res),__FILE__,__LINE__); \
+		OutputMessage("Fatal : Result is false. Error code: {} in {} at line {}\n", int32_t(res), __FILE__, __LINE__); \
 		assert(res == vk::Result::eSuccess);																		\
 	}																									\
 }

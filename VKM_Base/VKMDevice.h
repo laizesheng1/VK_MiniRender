@@ -9,6 +9,10 @@ namespace vkm {
 		uint32_t		  getQueueFamilyIndex(vk::QueueFlags queueFlags) const;
 		bool              extensionSupported(std::string extension);
 		vk::CommandPool   createCommandPool(uint32_t queueFamilyIndex, vk::CommandPoolCreateFlags createFlags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer);
+		vk::CommandBuffer createCommandBuffer(vk::CommandBufferLevel level, vk::CommandPool pool, bool begin = false);
+		void              flushCommandBuffer(vk::CommandBuffer commandBuffer, vk::Queue queue, vk::CommandPool pool, bool free = true);
+
+
 	protected:
 
 	public:
@@ -37,14 +41,13 @@ namespace vkm {
 
 		explicit VKMDevice(vk::PhysicalDevice physicalDevice);
 		~VKMDevice();
-		uint32_t          getMemoryType(uint32_t typeBits, vk::MemoryPropertyFlags properties, vk::Bool32* memTypeFound = nullptr) const;
+		uint32_t          queryMemTypeIndex(uint32_t type, vk::MemoryPropertyFlags properties, vk::Bool32* memTypeFound = nullptr) const;
 		vkm_result        createLogicalDevice(vk::PhysicalDeviceFeatures enabledFeatures, std::vector<const char*> enabledExtensions, void* pNextChain, bool useSwapChain = true, vk::QueueFlags requestedQueueTypes = vk::QueueFlagBits::eGraphics | vk::QueueFlagBits::eCompute);
-		vkm_result        createBuffer(vk::BufferUsageFlags usageFlags, vk::MemoryPropertyFlags memoryPropertyFlags, vk::DeviceSize size, vk::Buffer* buffer, vk::DeviceMemory* memory, void* data = nullptr);
-		vkm_result        createBuffer(vk::BufferUsageFlags usageFlags, vk::MemoryPropertyFlags memoryPropertyFlags, vkm::Buffer* buffer, VkDeviceSize size, void* data = nullptr);
+		vkm_result        createBuffer(vk::BufferUsageFlags usageFlags, vk::MemoryPropertyFlags memoryPropertyFlags, vk::DeviceSize size, vk::Buffer* buffer,  vk::DeviceMemory* memory,void* data = nullptr);
+		vkm_result        createBuffer(vk::BufferUsageFlags usageFlags, vk::MemoryPropertyFlags memoryPropertyFlags, vkm::Buffer* buffer, vk::DeviceSize size, void* data = nullptr);
 		void              copyBuffer(vkm::Buffer* src, vkm::Buffer* dst, vk::Queue queue, vk::BufferCopy* copyRegion = nullptr);
-		vk::CommandBuffer createCommandBuffer(vk::CommandBufferLevel level, vk::CommandPool pool, bool begin = false);
+
 		vk::CommandBuffer createCommandBuffer(vk::CommandBufferLevel level, bool begin = false);
-		void              flushCommandBuffer(vk::CommandBuffer commandBuffer, vk::Queue queue, vk::CommandPool pool, bool free = true);
 		void              flushCommandBuffer(vk::CommandBuffer commandBuffer, vk::Queue queue, bool free = true);
 		vk::Format        getSupportedDepthFormat(bool checkSamplingSupport);
 	};
