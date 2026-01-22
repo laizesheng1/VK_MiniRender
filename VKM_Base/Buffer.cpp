@@ -1,17 +1,21 @@
 #include "Buffer.h"
+#include "VKMDevice.h"
 
 namespace vkm {
-	void Buffer::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags property, uint32_t MemoryTypeIndex, void* data)
+	void Buffer::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags property, void* data, VKMDevice* vkmdevice)
 	{
-		assert(device);
+		assert(vkmdevice);
+		device = vkmdevice->logicalDevice;
 		vk::BufferCreateInfo createInfo;
+		createInfo.setSize(size)
+			.setUsage(usage);
 		VK_CHECK_RESULT(device.createBuffer(&createInfo, nullptr, &buffer));
-
 		vk::MemoryRequirements memReqs;
 		device.getBufferMemoryRequirements(buffer, &memReqs);
+
 		vk::MemoryAllocateInfo memAlloc;
 		memAlloc.setAllocationSize(memReqs.size)
-			.setMemoryTypeIndex(MemoryTypeIndex);
+			.setMemoryTypeIndex(vkmdevice->queryMemTypeIndex(memReqs.memoryTypeBits, property));
 		vk::MemoryAllocateFlagsInfoKHR allocFlagsInfo;
 		if (usageFlags & vk::BufferUsageFlagBits::eShaderDeviceAddress)
 		{
@@ -50,5 +54,23 @@ namespace vkm {
 			device.unmapMemory(memory);
 			mapped = nullptr;
 		}
+	}
+	void Buffer::destroy()
+	{
+		if (buffer)
+		{
+			device.destroyBuffer(buffer, nullptr);
+			buffer = VK_NULL_HANDLE;
+		}
+		if (memory)
+		{
+			device.freeMemory(memory, nullptr);
+			memory = VK_NULL_HANDLE;
+		}
+	}
+	vkm_result Buffer::flush(vk::DeviceSize size, VkDeviceSize offset)
+	{
+		vk::MappedMemoryRange mappedRange{ memory ,offset,size };
+		return device.flushMappedMemoryRanges(1, &mappedRange);
 	}
 }

@@ -12,6 +12,8 @@
 #include "Buffer.h"
 #include "VKMDevice.h"
 #include "Swapchain.h"
+#include "HUD.h"
+#include "DisplayWindow.h"
 
 #define DestroyHandleBy(Func) if (handle) { Func(VKM_Base::Get().Device(), handle, nullptr); handle = VK_NULL_HANDLE; }
 #define MoveHandle handle = other.handle; other.handle = VK_NULL_HANDLE;
@@ -21,19 +23,21 @@
 constexpr uint32_t maxConcurrentFrames = 2;
 
 class VKM_Base {
+	friend class DisplayWindows;
 	using CreateSurfaceCallback = std::function<vk::SurfaceKHR(vk::Instance)>;
 private:
+
 	static VKM_Base* singleton;
+	
 	void createSurface();
 	void createCmdPool();
 	void createSwapChain();
-	void createCmdBuffer();
+	void createCmdBuffers();
 	void InitializedSync();
-	void InitDefaultDepthStencil();
-	void InitRenderPass();
 	void createPipelineCache();
-	void InitFrameBuffer();
 
+	void nextFrame();
+	void updateOverlay();
 protected:
 	vk::Instance instance= VK_NULL_HANDLE;
 	std::vector<std::string> supportedInstanceExtensions;
@@ -57,23 +61,27 @@ protected:
 	std::array<vk::CommandBuffer, maxConcurrentFrames> drawCmdBuffers;
 	vk::RenderPass renderPass = VK_NULL_HANDLE;
 	vk::PipelineCache pipelineCache;
-	std::vector<vk::Framebuffer>frameBuffers;
+	std::vector<vk::Framebuffer> frameBuffers;
+	std::vector<vk::ShaderModule> shaderModules;
+	vk::DescriptorPool descriptorPool = VK_NULL_HANDLE;			//child use
 
 	SwainChain swapChain;
 	CreateSurfaceCallback createSurface_callback;
 
+	uint32_t currentImageIndex = 0;
+	uint32_t currentBuffer = 0;
 	std::array<vk::Semaphore, maxConcurrentFrames> imageAvaliableSemaphores{};		//before present
 	std::vector<vk::Semaphore> renderCompleteSemaphores{};
 	std::array<vk::Fence, maxConcurrentFrames> waitFences;
 
 	bool requireStencil = false;
 
-
 public:
 	uint32_t width, height;
 	vkm::VKMDevice* VKMDevice{};
-	std::string name = "VKM";
-	uint32_t apiVersion;
+	uint32_t apiVersion= VK_API_VERSION_1_3;
+	vkm::HUD ui;
+	DisplayWindows displayWindows;
 	//Default depth stencil attachment used by the default render pass
 	struct {
 		vk::Image image;
@@ -81,23 +89,46 @@ public:
 		vk::ImageView view;
 	} depthStencil{};
 
+	float frameTimer = 1.0f;
+	float timer = 0.0f;
+	float timerSpeed = 0.25f;
+
 	VKM_Base();
 	VKM_Base(VKM_Base&&) = delete;
-	~VKM_Base();
+	virtual ~VKM_Base();
 	bool initVulkan();
 	static VKM_Base& Get();
-	vk::Device Device() const { return device; }
+	vk::PipelineShaderStageCreateInfo loadShader(std::string fileName, vk::ShaderStageFlagBits stage);
+	void windowResize();
+	void renderLoop();
+	void drawUI(const vk::CommandBuffer commandBuffer);
 
+	//Prepare the next frame for workload submission by acquiring the next swap chain image and waiting for the previous command buffer to finish
+	void prepareFrame(bool waitForFence = true);
+
+	void submitFrame(bool skipQueueSubmit = false);
 
 	virtual vkm_result createInstance();
+	virtual void prepare();
+	virtual void createDefaultDepthStencil();
+	virtual void createRenderPass();
+	virtual void createFrameBuffer();
+
+	virtual void render();			//call in derived object
+	virtual void keyPressed(uint32_t);
+	virtual void mouseMoved(double x, double y, bool& handled);
+	virtual void windowHasResized();
+	virtual void OnUpdateHUD(vkm::HUD* ui);
+	virtual void OnHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+
 	virtual void getEnabledFeatures();
 	virtual void getEnabledExtensions();
-	virtual void prepare();
 	
 public:
 	//Gretter
 	void AddLayerOrExtension(std::vector<const char*>& container, const char* name);
 	void AddInstanceExtensions(const char* extension);
 	void SetCreateSurface(CreateSurfaceCallback createSurface);
+	vk::Device Device() const { return device; }
 
 };

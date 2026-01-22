@@ -6,12 +6,60 @@ VKM_Base::VKM_Base()
 {
 	width = 1280;
 	height = 720;
+	displayWindows = DisplayWindows(this);
+	displayWindows.SetUI(&ui);
 
+#if defined(_WIN32)
+	// Enable console if validation is active, debug message callback will output to it
+	if (displayWindows.settings.validation)
+	{
+		displayWindows.setupConsole("Vulkan example");
+	}
+	displayWindows.setupDPIAwareness();
+#endif
 }
 
 VKM_Base::~VKM_Base()
 {
+	swapChain.cleanup();
+	if (descriptorPool)
+	{
+		device.destroyDescriptorPool(descriptorPool);
+	}
+	device.freeCommandBuffers(cmdPool, static_cast<uint32_t>(drawCmdBuffers.size()), drawCmdBuffers.data());
+	if (renderPass != VK_NULL_HANDLE) {
+		device.destroyRenderPass(renderPass);
+	}
+	for (auto& frameBuffer : frameBuffers) {
+		device.destroyFramebuffer(frameBuffer);
+	}
+	for (auto& shaderModule : shaderModules) {
+		device.destroyShaderModule(shaderModule);
+	}
+	device.destroyImageView(depthStencil.view);
+	device.destroyImage(depthStencil.image);
+	device.freeMemory(depthStencil.memory);
+	device.destroyPipelineCache(pipelineCache);
+	device.destroyCommandPool(cmdPool);
+	for (auto& fence : waitFences) {
+		device.destroyFence(fence);
+	}
+	for (auto& semaphore : imageAvaliableSemaphores) {
+		device.destroySemaphore(semaphore);
+	}
+	for (auto& semaphore : renderCompleteSemaphores) {
+		device.destroySemaphore(semaphore);
+	}
+	if (displayWindows.settings.overlay)
+	{
+		ui.freeResources();
+	}
 	delete VKMDevice;
+	if (displayWindows.settings.validation)
+	{
+		vkm::debug::freeDebugCallback(instance);
+	}
+	instance.destroy();
 }
 
 void VKM_Base::prepare()
@@ -19,18 +67,109 @@ void VKM_Base::prepare()
 	createSurface();
 	createCmdPool();
 	createSwapChain();
-	createCmdBuffer();
+	createCmdBuffers();
 	InitializedSync();
-	InitDefaultDepthStencil();
-	InitRenderPass();
+	createDefaultDepthStencil();
+	createRenderPass();
 	createPipelineCache();
-	InitFrameBuffer();
+	createFrameBuffer();
 
+	ui.maxFrames = maxConcurrentFrames;
+	ui.device = VKMDevice;
+	ui.queue = queue;
+	ui.shaders = {
+			loadShader("../shaders/base/uioverlay.vert.spv", vk::ShaderStageFlagBits::eVertex),
+			loadShader("../shaders/base/uioverlay.frag.spv", vk::ShaderStageFlagBits::eFragment),
+	};
+	ui.prepareResources();
+	ui.createPipeline(pipelineCache, renderPass, swapChain.colorFormat, depthFormat);
+}
+
+vkm_result VKM_Base::createInstance()
+{
+	std::vector<const char*> instanceExtensions = { VK_KHR_SURFACE_EXTENSION_NAME };
+	instanceExtensions.push_back("VK_KHR_win32_surface");
+
+	// Get extensions supported by the instance and store for later use
+	std::vector<vk::ExtensionProperties> extensions = vk::enumerateInstanceExtensionProperties();
+	if (extensions.size() > 0)
+	{
+		for (VkExtensionProperties& extension : extensions)
+		{
+			supportedInstanceExtensions.push_back(extension.extensionName);
+		}
+	}
+	// Enabled requested instance extensions
+	if (!enabledInstanceExtensions.empty())
+	{
+		for (const char* enabledExtension : enabledInstanceExtensions)
+		{
+			// Output message if requested extension is not available
+			if (std::find(supportedInstanceExtensions.begin(), supportedInstanceExtensions.end(), enabledExtension) == supportedInstanceExtensions.end())
+			{
+				std::cerr << "Enabled instance extension \"" << enabledExtension << "\" is not present at instance level\n";
+			}
+			instanceExtensions.push_back(enabledExtension);
+		}
+	}
+	if (displayWindows.settings.validation)
+	{
+		instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+	}
+
+	vk::ApplicationInfo applicationInfo;
+	applicationInfo.setApiVersion(apiVersion)
+		.setPEngineName(displayWindows.name.c_str())
+		.setPApplicationName(displayWindows.name.c_str());
+
+	vk::InstanceCreateInfo instanceCreateInfo;
+	const char* validationLayerName = "VK_LAYER_KHRONOS_validation";
+	if (displayWindows.settings.validation) {
+		// Check if this layer is available at instance level
+		std::vector<vk::LayerProperties> instanceLayerProperties = vk::enumerateInstanceLayerProperties();
+		bool validationLayerPresent = false;
+		for (VkLayerProperties& layer : instanceLayerProperties) {
+			if (strcmp(layer.layerName, validationLayerName) == 0) {
+				validationLayerPresent = true;
+				break;
+			}
+		}
+		if (validationLayerPresent) {
+			instanceCreateInfo.setPEnabledLayerNames(validationLayerName);
+		}
+		else {
+			std::cerr << "Validation layer VK_LAYER_KHRONOS_validation not present, validation is disabled";
+		}
+	}
+
+	vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCI;
+	if (displayWindows.settings.validation) {
+		vkm::debug::setupDebugingMessengerCreateInfo(debugUtilsMessengerCI);
+		debugUtilsMessengerCI.pNext = instanceCreateInfo.pNext;
+		instanceCreateInfo.pNext = &debugUtilsMessengerCI;
+	}
+
+	instanceCreateInfo.setPApplicationInfo(&applicationInfo)
+		.setEnabledExtensionCount((uint32_t)instanceExtensions.size())
+		.setPpEnabledExtensionNames(instanceExtensions.data());
+
+	if (vk::Result result = vk::createInstance(&instanceCreateInfo, nullptr, &instance); result != vk::Result::eSuccess) {
+		std::cout << std::format("[ VK_Base ] ERROR\nFailed to create a vulkan instance!\nError code: {}\n", int32_t(result));
+		return result;
+	}
+	return vk::Result::eSuccess;
 }
 
 bool VKM_Base::initVulkan()
 {
 	vk::Result result = createInstance();
+
+	if (displayWindows.settings.validation)
+	{
+		vkm::debug::Init(instance);
+		vkm::debug::setupDebugging(instance);
+	}
+
 	// Physical device
 	auto devices = instance.enumeratePhysicalDevices();
 	if (devices.size()==0)
@@ -45,7 +184,6 @@ bool VKM_Base::initVulkan()
 		return false;
 	}
 	physicalDeviceProperties = physicalDevice.getProperties();
-
 	std::cout << "Renderer: " << physicalDeviceProperties.deviceName << std::endl;
 
 	PhysicalDeviceFeatures = physicalDevice.getFeatures();
@@ -72,7 +210,7 @@ bool VKM_Base::initVulkan()
 	else {
 		validFormat = vkm::tools::getSupportedDepthFormat(physicalDevice, &depthFormat);
 	}
-
+	//create surface
 	if(createSurface_callback)
 	{
 		vk::SurfaceKHR surface = createSurface_callback(instance);
@@ -89,9 +227,136 @@ VKM_Base& VKM_Base::Get()
 	return *singleton;
 }
 
+vk::PipelineShaderStageCreateInfo VKM_Base::loadShader(std::string fileName, vk::ShaderStageFlagBits stage)
+{
+	vk::PipelineShaderStageCreateInfo shderCreateInfo;
+	shderCreateInfo.setStage(stage)
+		.setPName("main")
+		.setModule(vkm::tools::loadShader(fileName.c_str(), device));
+	assert(shderCreateInfo.module != VK_NULL_HANDLE);
+	shaderModules.push_back(shderCreateInfo.module);
+	return shderCreateInfo;
+}
+
+void VKM_Base::windowResize()
+{
+	if (!displayWindows.prepared) {
+		return;
+	}
+	displayWindows.prepared = false;
+	displayWindows.resized = true;
+
+	// Ensure all operations on the device have been finished before destroying resources
+	device.waitIdle();
+
+	// Recreate swap chain
+	width = displayWindows.destWidth;
+	height = displayWindows.destHeight;
+	createSwapChain();
+
+	// Recreate the frame buffers
+	device.destroyImageView(depthStencil.view);
+	device.destroyImage(depthStencil.image);
+	device.freeMemory(depthStencil.memory);
+	createDefaultDepthStencil();
+	for (auto& frameBuffer : frameBuffers) {
+		device.destroyFramebuffer(frameBuffer);
+	}
+	createFrameBuffer();
+
+	if ((width > 0.0f) && (height > 0.0f)) {
+		ui.resize(width, height);
+	}
+
+	for (auto& semaphore : imageAvaliableSemaphores) {
+		device.destroySemaphore(semaphore);
+	}
+	for (auto& semaphore : renderCompleteSemaphores) {
+		device.destroySemaphore(semaphore);
+	}
+	for (auto& fence : waitFences) {
+		device.destroyFence(fence);
+	}
+	InitializedSync();
+
+	device.waitIdle();
+	if ((width > 0.0f) && (height > 0.0f)) {
+		displayWindows.camera.updateAspectRatio((float)width / (float)height);
+	}
+
+	// Notify derived class
+	windowHasResized();
+
+	displayWindows.prepared = true;
+}
+
+void VKM_Base::drawUI(const vk::CommandBuffer commandBuffer)
+{
+	if (displayWindows.settings.overlay && ui.visible) {
+		const vk::Viewport viewport(0.0, 0.0, (float)width, (float)height, 0.0, 1.0);
+		const vk::Rect2D scissor({ 0,0 }, { width,height });
+		commandBuffer.setViewport(0, viewport);
+		commandBuffer.setScissor(0, scissor);
+		ui.draw(commandBuffer, currentBuffer);
+	}
+}
+
+void VKM_Base::prepareFrame(bool waitForFence)
+{
+	if (waitForFence) {
+		VK_CHECK_RESULT(device.waitForFences(1, &waitFences[currentBuffer], VK_TRUE, UINT64_MAX));
+		VK_CHECK_RESULT(device.resetFences(1, &waitFences[currentBuffer]));
+	}
+
+	updateOverlay();
+	// Acquire the next image from the swap chain
+	vk::Result result = swapChain.acquireNextImage(imageAvaliableSemaphores[currentBuffer], currentImageIndex);
+	// Recreate the swapchain if it's no longer compatible with the surface (OUT_OF_DATE)
+	// If no longer optimal (VK_SUBOPTIMAL_KHR), wait until submitFrame() in case number of swapchain images will change on resize
+	if ((result == vk::Result::eErrorOutOfDateKHR ) || (result == vk::Result::eSuboptimalKHR)) {
+		if (result == vk::Result::eErrorOutOfDateKHR) {
+			windowResize();
+		}
+		return;
+	}
+	else {
+		VK_CHECK_RESULT(result);
+	}
+}
+
+void VKM_Base::submitFrame(bool skipQueueSubmit)
+{
+	if (!skipQueueSubmit)
+	{
+		const vk::PipelineStageFlags waitPipelineStage(vk::PipelineStageFlagBits::eColorAttachmentOutput);
+		vk::SubmitInfo submitInfo;
+		submitInfo.setWaitSemaphoreCount(1)
+			.setWaitSemaphores(imageAvaliableSemaphores[currentBuffer])
+			.setWaitDstStageMask(waitPipelineStage)
+			.setCommandBuffers(drawCmdBuffers[currentBuffer])
+			.setSignalSemaphores(renderCompleteSemaphores[currentImageIndex]);
+		VK_CHECK_RESULT(queue.submit(1, &submitInfo, waitFences[currentBuffer]));
+	}
+	vk::PresentInfoKHR presentInfo;
+	presentInfo.setWaitSemaphores(renderCompleteSemaphores[currentImageIndex])
+		.setSwapchains(swapChain.swapChain)
+		.setImageIndices(currentImageIndex);
+	vkm_result result = queue.presentKHR(presentInfo);
+	if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
+	{
+		windowResize();
+		if (result == vk::Result::eErrorOutOfDateKHR)
+			return;
+	}
+	else {
+		VK_CHECK_RESULT(result);
+	}
+	currentBuffer = (currentBuffer + 1) % maxConcurrentFrames;
+}
+
 void VKM_Base::createSurface()
 {
-	swapChain.initSurface();
+	swapChain.initSurface(displayWindows.windowInstance, displayWindows.window);
 }
 
 void VKM_Base::createCmdPool()
@@ -107,7 +372,7 @@ void VKM_Base::createSwapChain()
 	swapChain.CreateSwapchain(width, height, false);
 }
 
-void VKM_Base::createCmdBuffer()
+void VKM_Base::createCmdBuffers()
 {
 	vk::CommandBufferAllocateInfo cmdBufAllocateInfo;
 	cmdBufAllocateInfo.setCommandPool(cmdPool)
@@ -138,7 +403,7 @@ void VKM_Base::InitializedSync()
 	}
 }
 
-void VKM_Base::InitDefaultDepthStencil()
+void VKM_Base::createDefaultDepthStencil()
 {
 	vk::ImageCreateInfo createInfo;
 	createInfo.setArrayLayers(1)
@@ -179,7 +444,7 @@ void VKM_Base::InitDefaultDepthStencil()
 	VK_CHECK_RESULT(device.createImageView(&imageViewCreateInfo, nullptr, &depthStencil.view));
 }
 
-void VKM_Base::InitRenderPass()
+void VKM_Base::createRenderPass()
 {
 	vk::AttachmentDescription ColorattachDes;
 	ColorattachDes.setFormat(swapChain.colorFormat)			
@@ -242,7 +507,7 @@ void VKM_Base::createPipelineCache()
 	VK_CHECK_RESULT(device.createPipelineCache(&pipelineCacheCreateInfo, nullptr, &pipelineCache));
 }
 
-void VKM_Base::InitFrameBuffer()
+void VKM_Base::createFrameBuffer()
 {
 	frameBuffers.resize(swapChain.images.size());
 	for (uint32_t i = 0; i < frameBuffers.size(); i++) {
@@ -257,53 +522,117 @@ void VKM_Base::InitFrameBuffer()
 	}
 }
 
-vkm_result VKM_Base::createInstance()
+void VKM_Base::renderLoop()
 {
-    std::vector<const char*> instanceExtensions = { VK_KHR_SURFACE_EXTENSION_NAME };
-    instanceExtensions.push_back("VK_KHR_win32_surface");
-
-	// Get extensions supported by the instance and store for later use
-	std::vector<vk::ExtensionProperties> extensions = vk::enumerateInstanceExtensionProperties();
-	if (extensions.size() > 0)
-	{
-		for (VkExtensionProperties& extension : extensions)
-		{
-			supportedInstanceExtensions.push_back(extension.extensionName);
-		}
-	}
-	// Enabled requested instance extensions
-	if (!enabledInstanceExtensions.empty())
-	{
-		for (const char* enabledExtension : enabledInstanceExtensions)
-		{
-			// Output message if requested extension is not available
-			if (std::find(supportedInstanceExtensions.begin(), supportedInstanceExtensions.end(), enabledExtension) == supportedInstanceExtensions.end())
-			{
-				std::cerr << "Enabled instance extension \"" << enabledExtension << "\" is not present at instance level\n";
+	displayWindows.destWidth = width;
+	displayWindows.destHeight = height;
+	displayWindows.lastTimestamp = std::chrono::high_resolution_clock::now();
+	displayWindows.tPrevEnd = displayWindows.lastTimestamp;
+#if defined(_WIN32)
+	MSG msg;
+	bool quitMessageReceived = false;
+	while (!quitMessageReceived) {
+		while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {			//handle message input (keyboard\mouse)
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+			if (msg.message == WM_QUIT) {
+				quitMessageReceived = true;
+				break;
 			}
-			instanceExtensions.push_back(enabledExtension);
+		}
+		if (displayWindows.prepared && !IsIconic(displayWindows.window)) {
+			nextFrame();
 		}
 	}
-
-    std::vector<const char*> layers = { "VK_LAYER_KHRONOS_validation" };
-
-    vk::ApplicationInfo applicationInfo;
-	applicationInfo.setApiVersion(apiVersion)
-		.setPEngineName(name.c_str())
-		.setPApplicationName(name.c_str());
-
-    vk::InstanceCreateInfo instanceCreateInfo;
-	instanceCreateInfo.setPApplicationInfo(&applicationInfo)
-		.setEnabledExtensionCount(instanceExtensions.size())
-		.setPpEnabledExtensionNames(instanceExtensions.data())
-		.setPpEnabledLayerNames(layers.data());
-   
-    if (vk::Result result = vk::createInstance(&instanceCreateInfo, nullptr, &instance); result != vk::Result::eSuccess) {
-        std::cout << std::format("[ graphicsBase ] ERROR\nFailed to create a vulkan instance!\nError code: {}\n", int32_t(result));
-        return result;
-    }
-    return vk::Result::eSuccess;
+#endif
+	if (device != VK_NULL_HANDLE)
+	{
+		device.waitIdle();
+	}
 }
+
+void VKM_Base::nextFrame()
+{
+	auto tStart = std::chrono::high_resolution_clock::now();
+	render();
+	displayWindows.frameCounter++;
+	auto tEnd = std::chrono::high_resolution_clock::now();
+
+	auto tDiff = std::chrono::duration<double, std::milli>(tEnd - tStart).count();
+	frameTimer = (float)tDiff / 1000.0f;
+	displayWindows.camera.update(frameTimer);
+	// Convert to clamped timer value
+	if (!displayWindows.paused)
+	{
+		timer += timerSpeed * frameTimer;
+		if (timer > 1.0)
+		{
+			timer -= 1.0f;
+		}
+	}
+	float fpsTimer = (float)(std::chrono::duration<double, std::milli>(tEnd - displayWindows.lastTimestamp).count());
+	if (fpsTimer > 1000.0f)
+	{
+		displayWindows.lastFPS = static_cast<uint32_t>((float)displayWindows.frameCounter * (1000.0f / fpsTimer));
+#if defined(_WIN32)
+		if (!displayWindows.settings.overlay) {
+			std::string windowTitle = displayWindows.getWindowTitle();
+			SetWindowText(displayWindows.window, windowTitle.c_str());
+		}
+#endif
+		displayWindows.frameCounter = 0;
+		displayWindows.lastTimestamp = tEnd;
+	}
+	displayWindows.tPrevEnd = tEnd;
+}
+
+void VKM_Base::updateOverlay()
+{
+	const DisplayWindows::Settings& settings = displayWindows.settings;
+	const DisplayWindows::MouseState& mouseState = displayWindows.mouseState;
+
+	if (!settings.overlay)
+		return;
+
+	ImGuiIO& io = ImGui::GetIO();
+	io.DisplaySize = ImVec2((float)width, (float)height);
+	io.DeltaTime = frameTimer;
+	io.MousePos = ImVec2(mouseState.position.x, mouseState.position.y);
+	io.MouseDown[0] = mouseState.buttons.left && ui.visible;
+	io.MouseDown[1] = mouseState.buttons.right && ui.visible;
+	io.MouseDown[2] = mouseState.buttons.middle && ui.visible;
+
+	ImGui::NewFrame();
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
+	ImGui::SetNextWindowPos(ImVec2(10 * ui.scale, 10 * ui.scale));
+	ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiSetCond_FirstUseEver);
+	ImGui::Begin("Vulkan Example", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+	ImGui::TextUnformatted(displayWindows.title.c_str());
+	ImGui::TextUnformatted(physicalDeviceProperties.deviceName);
+	ImGui::Text("%.2f ms/frame (%.1d fps)", (1000.0f / displayWindows.lastFPS), displayWindows.lastFPS);
+	ImGui::PushItemWidth(110.0f * ui.scale);
+
+	OnUpdateHUD(&ui);			//call in derived
+
+	ImGui::PopItemWidth();
+	ImGui::End();
+	ImGui::PopStyleVar();
+	ImGui::Render();
+
+	ui.update(currentBuffer);
+}
+
+void VKM_Base::render(){}
+
+void VKM_Base::keyPressed(uint32_t){}
+
+void VKM_Base::mouseMoved(double x, double y, bool& handled){}
+
+void VKM_Base::windowHasResized() {}
+
+void VKM_Base::OnUpdateHUD(vkm::HUD* ui) {}
+
+void VKM_Base::OnHandleMessage(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {}
 
 void VKM_Base::getEnabledFeatures()
 {
@@ -331,4 +660,3 @@ void VKM_Base::SetCreateSurface(CreateSurfaceCallback createSurface)
 {
 	this->createSurface_callback = createSurface;
 }
-

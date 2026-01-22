@@ -111,7 +111,8 @@ namespace vkm {
 			deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
 		}
 		vk::DeviceCreateInfo createInfo;
-		createInfo.setQueueCreateInfos(queueCreateInfos);
+		createInfo.setQueueCreateInfos(queueCreateInfos)
+			.setPEnabledFeatures(&enabledFeatures);
 
 		//TODO:
 		vk::PhysicalDeviceFeatures2 physicalDeviceFeatures2{};
@@ -172,10 +173,10 @@ namespace vkm {
 				}
 			}
 		}
-
+		//use this
 		for (uint32_t i = 0; i < static_cast<uint32_t>(queueFamilyProperties.size()); i++)
 		{
-			if ((queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eCompute) && (!(queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics)))
+			if ((queueFamilyProperties[i].queueFlags & queueFlags) == queueFlags)
 			{
 				return i;
 			}
@@ -191,7 +192,9 @@ namespace vkm {
 	vkm_result VKMDevice::createBuffer(vk::BufferUsageFlags usageFlags, vk::MemoryPropertyFlags memoryPropertyFlags, vk::DeviceSize size, vk::Buffer* buffer, vk::DeviceMemory* memory, void* data)
 	{
 		vk::BufferCreateInfo createInfo;
-		createInfo.sharingMode = vk::SharingMode::eExclusive;
+		createInfo.setUsage(usageFlags)
+			.setSize(size)
+			.setSharingMode(vk::SharingMode::eExclusive);
 		VK_CHECK_RESULT(logicalDevice.createBuffer(&createInfo, nullptr, buffer));
 		vk::MemoryRequirements memReqs;
 		logicalDevice.getBufferMemoryRequirements(*buffer, &memReqs);
@@ -215,7 +218,7 @@ namespace vkm {
 				vk::MappedMemoryRange mappedRange;
 				mappedRange.setMemory(*memory)
 					.setSize(size);
-				logicalDevice.flushMappedMemoryRanges(1, &mappedRange);
+				VK_CHECK_RESULT(logicalDevice.flushMappedMemoryRanges(1, &mappedRange));
 			}
 			if(mapped)
 				logicalDevice.unmapMemory(*memory);
@@ -226,11 +229,7 @@ namespace vkm {
 	//return vkm::Buffer
 	vkm_result VKMDevice::createBuffer(vk::BufferUsageFlags usageFlags, vk::MemoryPropertyFlags memoryPropertyFlags, vkm::Buffer* buffer, vk::DeviceSize size, void* data)
 	{
-		buffer->device = logicalDevice;
-		vk::MemoryRequirements memReqs;
-		logicalDevice.getBufferMemoryRequirements(buffer->buffer, &memReqs);
-		uint32_t BufferMemTypeIndex = queryMemTypeIndex(memReqs.memoryTypeBits, memoryPropertyFlags);
-		buffer->createBuffer(size, usageFlags, memoryPropertyFlags, BufferMemTypeIndex, data);
+		buffer->createBuffer(size, usageFlags, memoryPropertyFlags, data, this);
 		return vkm_result();
 	}
 	void VKMDevice::copyBuffer(vkm::Buffer* src, vkm::Buffer* dst, vk::Queue queue, vk::BufferCopy* copyRegion)

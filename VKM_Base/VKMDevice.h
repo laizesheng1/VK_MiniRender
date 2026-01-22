@@ -12,7 +12,6 @@ namespace vkm {
 		vk::CommandBuffer createCommandBuffer(vk::CommandBufferLevel level, vk::CommandPool pool, bool begin = false);
 		void              flushCommandBuffer(vk::CommandBuffer commandBuffer, vk::Queue queue, vk::CommandPool pool, bool free = true);
 
-
 	protected:
 
 	public:

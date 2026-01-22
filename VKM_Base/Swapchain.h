@@ -23,7 +23,7 @@ public:
 	uint32_t queueNodeIndex = UINT32_MAX;
 	uint32_t imageCount = 0;
 
-	void initSurface();
+	void initSurface(void* platformHandle, void* platformWindow);
 	void AddCreateSwapchain_callbacks(void(*function)());
 	void AddDestroySwapchain_callbacks(void(*function)());
 	vkm_result GetSurfaceFormats();

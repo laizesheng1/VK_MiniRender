@@ -1,8 +1,21 @@
 #include "Swapchain.h"
 
-void SwainChain::initSurface()
+void SwainChain::initSurface(void* platformHandle, void* platformWindow)
 {
 	//create surface
+	if(surface==VK_NULL_HANDLE)
+	{
+#if defined(VK_USE_PLATFORM_WIN32_KHR)
+		vk::Result err = vk::Result::eSuccess;
+		vk::Win32SurfaceCreateInfoKHR surfaceCreateInfo{};
+		surfaceCreateInfo.hinstance = (HINSTANCE)platformHandle;
+		surfaceCreateInfo.hwnd = (HWND)platformWindow;
+		err = instance.createWin32SurfaceKHR(&surfaceCreateInfo, nullptr, &surface);
+		if (err != vk::Result::eSuccess) {
+			OutputMessage("Could not create surface!", uint32_t(err));
+		}
+#endif
+	}
 	assert(surface);
 
 	//try to find one that supports both graphics and present
@@ -212,6 +225,8 @@ vkm_result SwainChain::CreateSwapchain(uint32_t& width, uint32_t& height, bool l
 	swapchainCreateInfo.queueFamilyIndexCount = 0;
 	swapchainCreateInfo.oldSwapchain = oldSwapchain;
 
+	CreateSwapchain_Resources();
+
 	if (oldSwapchain != nullptr)
 	{
 		for (auto i = 0; i < images.size(); i++) {
@@ -219,8 +234,6 @@ vkm_result SwainChain::CreateSwapchain(uint32_t& width, uint32_t& height, bool l
 		}
 		device.destroySwapchainKHR(oldSwapchain);
 	}
-
-	CreateSwapchain_Resources();
 	
 	//Create related objects
 	ExecuteCallbacks(createSwapchain_callbacks);
@@ -266,8 +279,7 @@ void SwainChain::setContext(vk::Instance instance, vk::PhysicalDevice physicalDe
 
 vkm_result SwainChain::acquireNextImage(vk::Semaphore presentCompleteSemaphore, uint32_t& imageIndex)
 {
-
-	return vk::Result::eSuccess;
+	return device.acquireNextImageKHR(swapChain, UINT64_MAX, presentCompleteSemaphore, (vk::Fence)nullptr, &imageIndex);
 }
 
 void SwainChain::cleanup()

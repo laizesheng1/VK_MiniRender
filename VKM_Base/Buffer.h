@@ -1,11 +1,12 @@
 #pragma once
 #include "VKM_Tools.h"
 
-
 namespace vkm {
+	class VKMDevice;
 	struct Buffer {
+		using QueryFunc = std::function<uint32_t(uint32_t, vk::MemoryPropertyFlags, vk::Bool32*)>;
 	public:
-		vk::Device device;
+		vk::Device device = VK_NULL_HANDLE;
 		vk::DescriptorBufferInfo descriptor;
 		vk::DeviceSize size = 0;
 		vk::DeviceSize alignment = 0;
@@ -18,8 +19,10 @@ namespace vkm {
 		uint64_t deviceAddress;
 
 		void* mapped = nullptr;
-		void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags property, uint32_t MemoryTypeIndex, void* data);
+		void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags property, void* data, VKMDevice* vkmdevice);
 		vkm_result map(vk::DeviceSize size = VK_WHOLE_SIZE, vk::DeviceSize offset = 0);
 		void unmap();
+		void destroy();
+		vkm_result flush(vk::DeviceSize size= VK_WHOLE_SIZE, VkDeviceSize offset = 0);
 	};
 }
