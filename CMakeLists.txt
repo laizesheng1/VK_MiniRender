@@ -24,22 +24,19 @@ message(STATUS "Vulkan found: ${Vulkan_FOUND}")
 find_program(GLSLC_EXECUTABLE glslc REQUIRED)
 message(STATUS "glslc found: ${GLSLC_EXECUTABLE}")
 
-set(SHADER_SOURCE_DIR ${CMAKE_SOURCE_DIR}/shader)
-set(SHADER_OUTPUT_DIR ${CMAKE_BINARY_DIR})
-file(MAKE_DIRECTORY ${SHADER_OUTPUT_DIR})
+set(SHADER_SOURCE_DIR ${CMAKE_SOURCE_DIR}/shaders/glsl)
 file(GLOB_RECURSE SHADER_SOURCES 
     "${SHADER_SOURCE_DIR}/*.vert"
     "${SHADER_SOURCE_DIR}/*.frag"
 )
 foreach(SHADER ${SHADER_SOURCES})
-    get_filename_component(SHADER_NAME ${SHADER} NAME)
-    set(SHADER_SPIRV ${SHADER_OUTPUT_DIR}/${SHADER_NAME}.spv)
+    set(SHADER_SPIRV "${SHADER}.spv")
 
     add_custom_command(
         OUTPUT ${SHADER_SPIRV}
         COMMAND ${GLSLC_EXECUTABLE} ${SHADER} -o ${SHADER_SPIRV}
         DEPENDS ${SHADER}
-        COMMENT "Compiling ${SHADER_NAME} to SPIR-V"
+        COMMENT "Compiling ${SHADER} to SPIR-V"
     )
 
     list(APPEND SPIRV_FILES ${SHADER_SPIRV})
@@ -57,12 +54,15 @@ include_directories(external/imgui)
 include_directories(external/tinygltf)
 include_directories(external/glfw/include)
 include_directories(external/glm)
-include_directories(external)
+include_directories(external/ktx/include)
 include_directories(VKM_Base)
 include_directories(${Vulkan_INCLUDE_DIRS})
 
 file(GLOB HEADER_FILES "*.hpp" "*.h")
 file(GLOB SOURCE_FILES "*.cpp")
+
+add_definitions(-DVKM_ASSETS_DIR=\"${CMAKE_SOURCE_DIR}/assets/\")
+add_definitions(-DVKM_SHADERS_DIR=\"${CMAKE_SOURCE_DIR}/shaders/\")
 
 if (MSVC)
     add_compile_options(/std:c++latest)

@@ -78,8 +78,8 @@ void VKM_Base::prepare()
 	ui.device = VKMDevice;
 	ui.queue = queue;
 	ui.shaders = {
-			loadShader("../shaders/base/uioverlay.vert.spv", vk::ShaderStageFlagBits::eVertex),
-			loadShader("../shaders/base/uioverlay.frag.spv", vk::ShaderStageFlagBits::eFragment),
+			loadShader(vkm::tools::getShaderPath() + "/glsl/base/uioverlay.vert.spv", vk::ShaderStageFlagBits::eVertex),
+			loadShader(vkm::tools::getShaderPath() + "/glsl/base/uioverlay.frag.spv", vk::ShaderStageFlagBits::eFragment),
 	};
 	ui.prepareResources();
 	ui.createPipeline(pipelineCache, renderPass, swapChain.colorFormat, depthFormat);
@@ -141,7 +141,7 @@ vkm_result VKM_Base::createInstance()
 			std::cerr << "Validation layer VK_LAYER_KHRONOS_validation not present, validation is disabled";
 		}
 	}
-
+	//get validation message during create instance
 	vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCI;
 	if (displayWindows.settings.validation) {
 		vkm::debug::setupDebugingMessengerCreateInfo(debugUtilsMessengerCI);
@@ -422,7 +422,6 @@ void VKM_Base::createDefaultDepthStencil()
 	vk::MemoryAllocateInfo memAllocInfo;
 	memAllocInfo.setAllocationSize(memReqs.size)
 		.setMemoryTypeIndex(VKMDevice->queryMemTypeIndex(memReqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal));
-	depthStencil.memory = device.allocateMemory(memAllocInfo);
 	VK_CHECK_RESULT(device.allocateMemory(&memAllocInfo, nullptr, &depthStencil.memory));			
 	device.bindImageMemory(depthStencil.image, depthStencil.memory, 0);
 	//create imageview
@@ -659,4 +658,9 @@ void VKM_Base::AddInstanceExtensions(const char* extension)
 void VKM_Base::SetCreateSurface(CreateSurfaceCallback createSurface)
 {
 	this->createSurface_callback = createSurface;
+}
+
+std::string VKM_Base::getShadersPath() const
+{
+	return vkm::tools::getShaderPath() + "glsl/";
 }

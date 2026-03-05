@@ -13,8 +13,6 @@ set(KTX_SOURCES
     ${KTX_DIR}/lib/filestream.c
     ${KTX_DIR}/lib/vkloader.c)
 
-include_directories(${KTX_DIR}/include)
-
 add_library(VKM_Base STATIC ${BASE_SRC} ${KTX_SOURCES})
 if(WIN32)
     target_link_libraries(VKM_Base ${Vulkan_LIBRARY} ${WINLIBS})

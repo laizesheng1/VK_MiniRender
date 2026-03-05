@@ -119,10 +119,14 @@ namespace vkm {
 			vk::ImageLayout newImageLayout,
 			vk::PipelineStageFlags srcStageMask = vk::PipelineStageFlagBits::eAllCommands,
 			vk::PipelineStageFlags dstStageMask = vk::PipelineStageFlagBits::eAllCommands);
+		vk::BufferImageCopy initBufferImageCopyInfo(vk::Extent3D imageExtent, uint32_t mipLevel = 0, vk::DeviceSize bufferOffset = 0);
+		vk::Bool32 formatHasStencil(vk::Format format);
 
 		bool fileExist(const std::string& filename);
 		void exitFatal(const std::string& message, int32_t exitCode);
 		void exitFatal(const std::string& message, vk::Result resultCode);
+		const std::string getAssetPath();
+		const std::string getShaderPath();
 	}
 
     namespace debug {
@@ -142,6 +146,29 @@ namespace vkm {
 
 		void Init(vk::Instance instance);
     }
+
+	namespace initializers {
+		vk::WriteDescriptorSet writeDescriptorSet(
+			vk::DescriptorSet dstSet,
+			vk::DescriptorType type,
+			uint32_t binding,
+			vk::DescriptorBufferInfo* bufferInfo,
+			uint32_t descriptorCount = 1
+		);
+		vk::WriteDescriptorSet writeDescriptorSet(
+			vk::DescriptorSet dstSet,
+			vk::DescriptorType type,
+			uint32_t binding,
+			vk::DescriptorImageInfo* imageInfo,
+			uint32_t descriptorCount = 1
+		);
+		void createImageSubresourceRange(vk::ImageSubresourceRange& subresourceRange,
+			uint32_t baseMipLevel,
+			uint32_t levelCount,
+			uint32_t baseArrayLayer,
+			uint32_t layerCount
+		);
+	}
 }
 
 #endif

@@ -225,7 +225,8 @@ vkm_result SwainChain::CreateSwapchain(uint32_t& width, uint32_t& height, bool l
 	swapchainCreateInfo.queueFamilyIndexCount = 0;
 	swapchainCreateInfo.oldSwapchain = oldSwapchain;
 
-	CreateSwapchain_Resources();
+	//Create new swapchain
+	VK_CHECK_RESULT(device.createSwapchainKHR(&swapchainCreateInfo, nullptr, &swapChain));
 
 	if (oldSwapchain != nullptr)
 	{
@@ -234,6 +235,8 @@ vkm_result SwainChain::CreateSwapchain(uint32_t& width, uint32_t& height, bool l
 		}
 		device.destroySwapchainKHR(oldSwapchain);
 	}
+
+	CreateSwapchain_Resources();
 	
 	//Create related objects
 	ExecuteCallbacks(createSwapchain_callbacks);
@@ -243,8 +246,6 @@ vkm_result SwainChain::CreateSwapchain(uint32_t& width, uint32_t& height, bool l
 
 vkm_result SwainChain::CreateSwapchain_Resources()
 {
-	//Create new swapchain
-	VK_CHECK_RESULT(device.createSwapchainKHR(&swapchainCreateInfo, nullptr, &swapChain));
 	//Get swapchain images
 	images = device.getSwapchainImagesKHR(swapChain);
 	imageCount = images.size();

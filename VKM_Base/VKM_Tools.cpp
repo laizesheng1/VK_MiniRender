@@ -8,11 +8,11 @@ namespace vkm {
 		vk::Bool32 getSupportedDepthFormat(vk::PhysicalDevice physicalDevice, vk::Format* depthFormat)
 		{
 			std::vector<vk::Format> formatList = {
-				vk::Format::eD32Sfloat,
 				vk::Format::eD32SfloatS8Uint,
+				vk::Format::eD32Sfloat,
 				vk::Format::eD24UnormS8Uint,
-				vk::Format::eD16Unorm,
-				vk::Format::eD16UnormS8Uint
+				vk::Format::eD16UnormS8Uint,
+				vk::Format::eD16Unorm
 			};
 
 			for (auto& format : formatList)
@@ -155,6 +155,30 @@ namespace vkm {
 			subresourceRange.layerCount = 1;
 			setImageLayout(cmdbuffer, image, oldImageLayout, newImageLayout, subresourceRange, srcStageMask, dstStageMask);
 		}
+		vk::BufferImageCopy initBufferImageCopyInfo(vk::Extent3D imageExtent, uint32_t mipLevel, vk::DeviceSize bufferOffset)
+		{
+			vk::BufferImageCopy bufferCopyRegion;
+			vk::ImageSubresourceLayers Layers;
+			Layers.setAspectMask(vk::ImageAspectFlagBits::eColor)
+				.setMipLevel(mipLevel)
+				.setBaseArrayLayer(0)
+				.setLayerCount(1);
+
+			bufferCopyRegion.setBufferOffset(bufferOffset)
+				.setImageSubresource(Layers)
+				.setImageExtent(imageExtent);
+			return bufferCopyRegion;
+		}
+		vk::Bool32 formatHasStencil(vk::Format format)
+		{
+			std::vector<vk::Format> stencilFormats = {
+				vk::Format::eS8Uint,
+				vk::Format::eD16UnormS8Uint,
+				vk::Format::eD24UnormS8Uint,
+				vk::Format::eD32SfloatS8Uint,
+			};
+			return std::find(stencilFormats.begin(), stencilFormats.end(), format) != stencilFormats.end();
+		}
 		bool fileExist(const std::string& filename)
 		{
 			std::ifstream f(filename.c_str());
@@ -170,6 +194,22 @@ namespace vkm {
 		void exitFatal(const std::string& message, vk::Result resultCode)
 		{
 			exitFatal(message, (int32_t)resultCode);
+		}
+		const std::string getAssetPath()
+		{
+		#if defined VKM_ASSETS_DIR
+			return VKM_ASSETS_DIR;
+		#else 
+			return "./../assets/";
+		#endif
+		}
+		const std::string getShaderPath()
+		{
+		#if defined VKM_SHADERS_DIR
+			return VKM_SHADERS_DIR;
+		#else 
+			return "./../shaders/";
+		#endif
 		}
     }
 
@@ -255,6 +295,37 @@ namespace vkm {
 			auto vkGetInstanceProcAddr = dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr");
 			VULKAN_HPP_DEFAULT_DISPATCHER.init(vkGetInstanceProcAddr);
 			VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
+		}
+	}
+
+	namespace  initializers {
+		vk::WriteDescriptorSet writeDescriptorSet(vk::DescriptorSet dstSet, vk::DescriptorType type, uint32_t binding, vk::DescriptorBufferInfo* bufferInfo, uint32_t descriptorCount)
+		{
+			vk::WriteDescriptorSet writeDescriptorSet;
+			writeDescriptorSet.setDstSet(dstSet)
+				.setDescriptorType(type)
+				.setDstBinding(binding)
+				.setPBufferInfo(bufferInfo)
+				.setDescriptorCount(descriptorCount);
+			return writeDescriptorSet;
+		}
+		vk::WriteDescriptorSet writeDescriptorSet(vk::DescriptorSet dstSet, vk::DescriptorType type, uint32_t binding, vk::DescriptorImageInfo* imageInfo, uint32_t descriptorCount)
+		{
+			vk::WriteDescriptorSet writeDescriptorSet;
+			writeDescriptorSet.setDstSet(dstSet)
+				.setDescriptorType(type)
+				.setDstBinding(binding)
+				.setPImageInfo(imageInfo)
+				.setDescriptorCount(descriptorCount);
+			return writeDescriptorSet;
+		}
+		void createImageSubresourceRange(vk::ImageSubresourceRange& subresourceRange, uint32_t baseMipLevel, uint32_t levelCount, uint32_t baseArrayLayer, uint32_t layerCount)
+		{
+			subresourceRange.setAspectMask(vk::ImageAspectFlagBits::eColor)
+				.setBaseMipLevel(baseMipLevel)
+				.setLevelCount(levelCount)
+				.setBaseArrayLayer(baseArrayLayer)
+				.setLayerCount(layerCount);
 		}
 	}
 }

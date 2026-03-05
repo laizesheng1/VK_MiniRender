@@ -15,7 +15,7 @@
 #include "HUD.h"
 #include "DisplayWindow.h"
 
-#define DestroyHandleBy(Func) if (handle) { Func(VKM_Base::Get().Device(), handle, nullptr); handle = VK_NULL_HANDLE; }
+#define DestroyHandleBy(Func, handle)  { if (handle && VKM_Base::Get().Device()) VKM_Base::Get().Device().Func(handle, nullptr); handle = VK_NULL_HANDLE; }
 #define MoveHandle handle = other.handle; other.handle = VK_NULL_HANDLE;
 #define DefineHandleTypeOperator operator decltype(handle)() const { return handle; }
 #define DefineAddressFunction const decltype(handle)* Address() const { return &handle; }
@@ -75,7 +75,7 @@ protected:
 	std::array<vk::Fence, maxConcurrentFrames> waitFences;
 
 	bool requireStencil = false;
-
+	std::string getShadersPath() const;
 public:
 	uint32_t width, height;
 	vkm::VKMDevice* VKMDevice{};

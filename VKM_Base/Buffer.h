@@ -23,6 +23,7 @@ namespace vkm {
 		vkm_result map(vk::DeviceSize size = VK_WHOLE_SIZE, vk::DeviceSize offset = 0);
 		void unmap();
 		void destroy();
-		vkm_result flush(vk::DeviceSize size= VK_WHOLE_SIZE, VkDeviceSize offset = 0);
+		vkm_result flush(vk::DeviceSize size= VK_WHOLE_SIZE, vk::DeviceSize offset = 0);
+		void setupDescriptor(vk::DeviceSize size = VK_WHOLE_SIZE, vk::DeviceSize offset = 0);
 	};
 }

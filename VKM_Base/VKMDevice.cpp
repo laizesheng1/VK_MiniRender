@@ -342,4 +342,13 @@ namespace vkm {
 		}
 		throw std::runtime_error("Could not find a matching depth format");
 	}
+	void VKMDevice::AllocBindImageMem(vk::MemoryPropertyFlags property, vk::Image& image, vk::DeviceMemory& memory)
+	{
+		vk::MemoryRequirements memReqs = logicalDevice.getImageMemoryRequirements(image);
+		vk::MemoryAllocateInfo memAllocInfo;
+		memAllocInfo.setAllocationSize(memReqs.size);
+		memAllocInfo.setMemoryTypeIndex(queryMemTypeIndex(memReqs.memoryTypeBits, property));
+		VK_CHECK_RESULT(logicalDevice.allocateMemory(&memAllocInfo, nullptr, &memory));
+		logicalDevice.bindImageMemory(image, memory, 0);
+	}
 }

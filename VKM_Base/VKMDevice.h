@@ -49,5 +49,6 @@ namespace vkm {
 		vk::CommandBuffer createCommandBuffer(vk::CommandBufferLevel level, bool begin = false);
 		void              flushCommandBuffer(vk::CommandBuffer commandBuffer, vk::Queue queue, bool free = true);
 		vk::Format        getSupportedDepthFormat(bool checkSamplingSupport);
+		void			  AllocBindImageMem(vk::MemoryPropertyFlags property, vk::Image& image, vk::DeviceMemory& memory);
 	};
 }

@@ -39,13 +39,13 @@ namespace vkm {
 			}
 			unmap();
 		}
+		setupDescriptor();
 		device.bindBufferMemory(buffer, memory, 0);
 	}
 
 	vkm_result Buffer::map(vk::DeviceSize size, vk::DeviceSize offset)
 	{
-		vk::MemoryMapFlags flags = {};
-		return device.mapMemory(memory, offset, size, flags, &mapped);
+		return device.mapMemory(memory, offset, size, {}, &mapped);
 	}
 	void Buffer::unmap()
 	{
@@ -68,9 +68,15 @@ namespace vkm {
 			memory = VK_NULL_HANDLE;
 		}
 	}
-	vkm_result Buffer::flush(vk::DeviceSize size, VkDeviceSize offset)
+	vkm_result Buffer::flush(vk::DeviceSize size, vk::DeviceSize offset)
 	{
 		vk::MappedMemoryRange mappedRange{ memory ,offset,size };
 		return device.flushMappedMemoryRanges(1, &mappedRange);
+	}
+	void Buffer::setupDescriptor(vk::DeviceSize size, vk::DeviceSize offset)
+	{
+		descriptor.offset = offset;
+		descriptor.buffer = buffer;
+		descriptor.range = size;
 	}
 }
